@@ -80,5 +80,5 @@ void loop() {
   Serial.print(GyY); Serial.print(",");
   Serial.println(GyZ); 
 
-  delay(50); // একটু ডিলে (যাতে মনিটরে ডেটা পড়ার সময় পাস)
+  delay(500); // একটু ডিলে (যাতে মনিটরে ডেটা পড়ার সময় পাস)
 }
