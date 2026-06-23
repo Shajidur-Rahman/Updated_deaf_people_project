@@ -1,0 +1,34 @@
+{
+  "build": {
+    "core": "esp32",
+    "extra_flags": "-DARDUINO_USB_CDC_ON_BOOT=1 -DCONFIG_IDF_TARGET_ESP32P4",
+    "f_cpu": "400000000L",
+    "f_flash": "80000000L",
+    "flash_mode": "qio",
+    "mcu": "esp32p4",
+    "variant": "esp32p4"
+  },
+  "connectivity": [
+    "wifi",
+    "bluetooth"
+  ],
+  "frameworks": [
+    "arduino",
+    "espidf"
+  ],
+  "name": "ESP32-P4 DevKitC-1",
+  "upload": {
+    "flash_size": "16MB",
+    "maximum_ram_size": 786432,
+    "maximum_size": 16777216,
+    "protocols": [
+      "esptool",
+      "espota"
+    ],
+    "protocol": "esptool",
+    "require_upload_port": true,
+    "speed": 921600
+  },
+  "url": "https://docs.espressif.com/projects/esp-idf/en/latest/esp32p4/",
+  "vendor": "Espressif"
+}
