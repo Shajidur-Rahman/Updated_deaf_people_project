@@ -7,6 +7,7 @@ import tensorflow as tf
 from collections import deque
 import speech_recognition as sr
 import threading
+import vlc  # 🎵 VLC লাইব্রেরি .aac বাজানোর জন্য
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
@@ -14,10 +15,14 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "ei-project-shajidur-project-1-classifier-tensorflow-lite-float32-model.3.lite")
 
+# 🎵 তোর কাস্টম .aac অডিও ফাইলের লোকেশন
+AUDIO_FILE = os.path.join(BASE_DIR, "ab.aac") 
+
 CLASSES = ["Hehe", "Hello_1", "Hello_2", "Hello_3"] 
 
-SERIAL_PORT_IN = 'COM13'   # সেন্সর ESP32
-SERIAL_PORT_OUT = 'COM8'  # ডিসপ্লে ESP32
+# ⚠️ তোর ল্যাপটপের সঠিক COM পোর্টগুলো এখানে বসাবি ⚠️
+SERIAL_PORT_IN = 'COM13'   # সেন্সর গ্লাভস এর বোর্ড
+SERIAL_PORT_OUT = 'COM8'   # ডিসপ্লের বোর্ড
 BAUD_RATE = 115200
 
 # পোর্ট কানেকশন
@@ -25,13 +30,15 @@ try:
     ser_in = serial.Serial(SERIAL_PORT_IN, BAUD_RATE, timeout=1)
 except:
     ser_in = None
+    print(f"⚠️ Warning: Input ESP32 on {SERIAL_PORT_IN} not connected.")
 
 try:
     ser_out = serial.Serial(SERIAL_PORT_OUT, BAUD_RATE, timeout=1)
 except:
     ser_out = None
+    print(f"⚠️ Warning: Output ESP32 on {SERIAL_PORT_OUT} not connected.")
 
-# ================= 1.5 স্পিচ টু টেক্সট সেকশন =================
+# ================= 1.5 স্পিচ রিকগনিশন =================
 recognizer = sr.Recognizer()
 
 def listen_and_convert():
@@ -42,11 +49,9 @@ def listen_and_convert():
         while True:
             try:
                 audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
-                # ডিসপ্লেতে দেখানোর জন্য ইংরেজিতে কনভার্ট
                 text = recognizer.recognize_google(audio, language="en-US")
                 print(f"\n[🗣️ VOICE INPUT]: {text}\n")
                 
-                # ডিসপ্লের ESP32-তে ভয়েস পাঠানো
                 if ser_out:
                     msg = f"VOICE:{text}\n"
                     ser_out.write(msg.encode('utf-8'))
@@ -55,7 +60,7 @@ def listen_and_convert():
                 pass
             except sr.WaitTimeoutError:
                 pass
-            except Exception as e:
+            except Exception:
                 pass
 
 voice_thread = threading.Thread(target=listen_and_convert)
@@ -81,6 +86,7 @@ data_buffer = deque(maxlen=20)
 last_sensor_data = [0.0] * 11
 current_prediction = "Waiting..."
 confidence = 0.0
+last_spoken_sign = ""  
 
 # ================= 4. মেইন রিয়েল-টাইম লুপ =================
 while True:
@@ -100,6 +106,7 @@ while True:
             hand_data[idx], hand_data[idx+1] = round(lm.x, 4), round(lm.y, 4)
             idx += 2
 
+    # সিরিয়াল সেন্সর ডেটা রিড
     if ser_in and ser_in.in_waiting > 0:
         try:
             line = ser_in.readline().decode('utf-8').strip()
@@ -129,12 +136,27 @@ while True:
 
         if confidence > 0.70:
             current_prediction = CLASSES[max_idx]
+            
             # ডিসপ্লের ESP32-তে সাইন পাঠানো
             if ser_out:
                 msg = f"SIGN:{current_prediction}\n"
                 ser_out.write(msg.encode('utf-8'))
+                
+            # 🎵 তোর কাস্টম .aac অডিও প্লে করা (VLC দিয়ে)
+            if current_prediction == "Hello_3" and last_spoken_sign != "Hello_3":
+                print(f"\n🔊 [SPEAKER]: Playing {AUDIO_FILE}...\n")
+                try:
+                    player = vlc.MediaPlayer(AUDIO_FILE)
+                    player.play()
+                except Exception as e:
+                    print(f"⚠️ Audio Error: {e} (Check if VLC is installed!)")
+                last_spoken_sign = "Hello_3"
+                
+            elif current_prediction != "Hello_3":
+                last_spoken_sign = current_prediction
+                
         else:
-            current_prediction = "Unknown"
+            current_prediction = "Waiting..."
 
     # ================= 6. অন-স্ক্রিন ডিসপ্লে (HUD) =================
     cv2.rectangle(frame, (10, 10), (450, 100), (0, 0, 0), -1)
