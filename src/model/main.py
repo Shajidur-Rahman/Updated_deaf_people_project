@@ -6,21 +6,22 @@ import os
 import numpy as np
 import tensorflow as tf
 from collections import deque
+import speech_recognition as sr
+import threading
 
-# ওয়ার্নিং বন্ধ করার জন্য
+# ওয়ার্নিং বন্ধ করার জন্য
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 # ================= 1. সেটআপ সেকশন =================
-# MODEL_PATH = "src/model/ei-project-shajidur-project-1-classifier-tensorflow-lite-float32-model.lite"
-# ফাইলের আসল লোকেশন ডাইনামিক্যালি বের করার জন্য
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "ei-project-shajidur-project-1-classifier-tensorflow-lite-float32-model.3.lite")
+
 # তোর 4টা ক্লাসের আসল নাম এখানে দিবি (Edge Impulse-এ যেভাবে ছিল)
 CLASSES = ["Hehe", "Hello_1", "Hello_2", "Hello_3"] 
 
-# পোর্ট সেটআপ (তোর অনুযায়ী পোর্ট নাম্বারগুলো চেঞ্জ করে নিবি)
+# পোর্ট সেটআপ (তোর অনুযায়ী পোর্ট নাম্বারগুলো চেঞ্জ করে নিবি)
 SERIAL_PORT_IN = 'COM8'   # যেটাতে সেন্সর লাগানো ESP32-S3 আছে
-SERIAL_PORT_OUT = 'COM9'  # যেটাতে রেজাল্ট পাঠাবি (দ্বিতীয় ESP32)
+SERIAL_PORT_OUT = 'COM9'  # যেটাতে রেজাল্ট পাঠাবি (দ্বিতীয় ESP32)
 BAUD_RATE = 115200
 
 # সেন্সর ইনপুট কানেকশন
@@ -39,6 +40,38 @@ except Exception as e:
     print(f"⚠️ Warning: Output ESP32 on {SERIAL_PORT_OUT} not connected. Skipping output send.")
     ser_out = None
 
+# ================= 1.5 স্পিচ টু টেক্সট (বাংলা) সেকশন =================
+print("মাইক্রোফোন সেটআপ হচ্ছে... 🎤")
+recognizer = sr.Recognizer()
+
+def listen_and_convert():
+    with sr.Microphone() as source:
+        # চারপাশের নয়েজ ফিল্টার করা
+        recognizer.adjust_for_ambient_noise(source, duration=1)
+        print("🎤 [MIC READY] আপনি এখন কথা বলতে পারেন...")
+        
+        while True:
+            try:
+                # কথা শোনার জন্য অপেক্ষা করবে
+                audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                
+                # গুগলের এপিআই দিয়ে কথাকে বাংলা টেক্সট করা
+                text = recognizer.recognize_google(audio, language="bn-BD")
+                print(f"\n[🗣️ VOICE INPUT]: {text}\n")
+                
+            except sr.UnknownValueError:
+                pass
+            except sr.WaitTimeoutError:
+                pass
+            except Exception as e:
+                # ইন্টারনেট না থাকলে বা অন্য এরর হলে
+                pass
+
+# ব্যাকগ্রাউন্ডে কথা শোনার ইঞ্জিন চালু করা (যাতে ক্যামেরা না আটকায়)
+voice_thread = threading.Thread(target=listen_and_convert)
+voice_thread.daemon = True
+voice_thread.start()
+
 # ================= 2. এআই ব্রেইন লোড =================
 print("AI Brain লোড হচ্ছে... 🧠")
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
@@ -53,8 +86,9 @@ hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7
 mp_draw = mp.solutions.drawing_utils
 
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+# ক্যামেরা উইন্ডো সাইজ ঠিক করা
+cv2.namedWindow("Smart Glove Vision AI", cv2.WINDOW_NORMAL)
+cv2.resizeWindow("Smart Glove Vision AI", 800, 450)
 
 # মডেলের জন্য 1060 ফিচারের বাফার (20 ফ্রেম * 53 ফিচার = 1060)
 data_buffer = deque(maxlen=20)
@@ -63,11 +97,11 @@ current_prediction = "Waiting..."
 confidence = 0.0
 
 print("\n" + "="*50)
-print("🚀 AI INFERENCE SYSTEM RUNNING 🚀")
+print("🚀 AI INFERENCE & VOICE SYSTEM RUNNING 🚀")
 print("Press 'q' to quit.")
 print("="*50 + "\n")
 
-# ================= 4. মেইন রিয়েল-টাইম লুপ =================
+# ================= 4. মেইন রিয়েল-টাইম লুপ =================
 while True:
     ret, frame = cap.read()
     if not ret: 
@@ -77,7 +111,7 @@ while True:
     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = hands.process(img_rgb)
     
-    # মিডিয়াপাইপ থেকে 42 ফিচার (21 x, y)
+    # মিডিয়াপাইপ থেকে 42 ফিচার (21 x, y)
     hand_data = [0.0] * 42 
     if results.multi_hand_landmarks:
         hand_landmarks = results.multi_hand_landmarks[0]
@@ -97,6 +131,7 @@ while True:
                     flex_str = parts[0].split(':')[1].split(',')
                     accel_str = parts[1].split(':')[1].split(',')
                     gyro_str = parts[2].split(':')[1].split(',')
+                    
                     # স্ট্রিং থেকে ফ্লোটে রূপান্তর
                     raw_sensor = flex_str + accel_str + gyro_str
                     last_sensor_data = [float(val) for val in raw_sensor]
@@ -112,20 +147,20 @@ while True:
         # বাফারের 20x53 ডেটাকে ফ্ল্যাট করে [1, 1060] শেইপ বানানো
         input_array = np.array(data_buffer, dtype=np.float32).flatten().reshape(1, 1060)
         
-        # মডেলে ডেটা দেওয়া
+        # মডেলে ডেটা দেওয়া
         interpreter.set_tensor(input_details[0]['index'], input_array)
         interpreter.invoke()
         
-        # আউটপুট নেওয়া
+        # আউটপুট নেওয়া
         output_data = interpreter.get_tensor(output_details[0]['index'])[0]
         max_idx = np.argmax(output_data)
         confidence = output_data[max_idx]
 
-        # যদি 70% এর বেশি সিওর হয়, তাহলে আউটপুট দেখাবে
+        # যদি 70% এর বেশি সিওর হয়, তাহলে আউটপুট দেখাবে
         if confidence > 0.70:
             current_prediction = CLASSES[max_idx]
             
-            # রেজাল্ট দ্বিতীয় ESP32-তে পাঠানো
+            # রেজাল্ট দ্বিতীয় ESP32-তে পাঠানো
             if ser_out:
                 msg = f"{current_prediction}\n"
                 ser_out.write(msg.encode('utf-8'))
