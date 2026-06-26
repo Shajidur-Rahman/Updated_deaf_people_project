@@ -13,12 +13,12 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 # ================= 1. সেটআপ সেকশন =================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "ei-project-shajidur-project-1-classifier-tensorflow-lite-float32-model.3.lite")
+MODEL_PATH = os.path.join(BASE_DIR, "ei-project-shajidur-project-1-classifier-tensorflow-lite-float32-model.6.lite")
 
 # 🎵 তোর কাস্টম .aac অডিও ফাইলের লোকেশন
 AUDIO_FILE = os.path.join(BASE_DIR, "ab.aac") 
 
-CLASSES = ["Hehe", "Hello_1", "Hello_2", "Hello_3"] 
+CLASSES = ['food', 'idle', 'no', 'ok', 'salam', 'yes'] 
 
 # ⚠️ তোর ল্যাপটপের সঠিক COM পোর্টগুলো এখানে বসাবি ⚠️
 SERIAL_PORT_IN = 'COM13'   # সেন্সর গ্লাভস এর বোর্ড
@@ -78,7 +78,7 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
-cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 cv2.namedWindow("Smart Glove Vision AI", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("Smart Glove Vision AI", 800, 450)
 
