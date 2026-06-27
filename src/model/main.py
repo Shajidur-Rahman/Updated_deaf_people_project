@@ -3,17 +3,59 @@ import mediapipe as mp
 import random
 import urllib.request
 import os
+import threading
+import speech_recognition as sr
 
-# ================= 1. Google AI Model ডাউনলোড =================
+# ================= 1. কাস্টম সাইন ডিকশনারি =================
+# গুগলের সাইনকে তোর কাস্টম সাইনে কনভার্ট করার ম্যাজিক ম্যাপ
+SIGN_MAP = {
+    "Open_Palm": "Salam",
+    "Closed_Fist": "Food",
+    "Pointing_Up": "Help",
+    "Thumb_Up": "Yes",
+    "Thumb_Down": "No",
+    "ILoveYou": "Water",
+    "Victory": "Victory" # এটা ডিফল্ট রেখে দিলাম
+}
+
+# ================= 2. ভয়েস রিকগনিশন (ব্যাকগ্রাউন্ড থ্রেড) =================
+def listen_to_voice():
+    recognizer = sr.Recognizer()
+    # ওয়েবক্যাম বা ডিফল্ট মাইক্রোফোন ব্যবহার করবে
+    with sr.Microphone() as source:
+        print("\n[🎤] Mic is ACTIVE! Calibrating for background noise...")
+        recognizer.adjust_for_ambient_noise(source, duration=1)
+        print("[🎤] Ready! Speak into the webcam mic...\n")
+        
+        while True:
+            try:
+                # কথা শোনার চেষ্টা করবে
+                audio = recognizer.listen(source, timeout=1, phrase_time_limit=5)
+                # কথাকে ইংরেজিতে কনভার্ট করা (Google Speech-to-Text)
+                text = recognizer.recognize_google(audio, language="en-US")
+                print(f">>> [🗣️ VOICE TRANSLATION]: {text}")
+                
+            except sr.WaitTimeoutError:
+                pass # কথা না বললে আবার লুপে ঘুরবে
+            except sr.UnknownValueError:
+                pass # কথা বুঝতে না পারলে ইগনোর করবে
+            except Exception as e:
+                pass
+
+# ভয়েস শোনার ইঞ্জিনটাকে আলাদা একটা থ্রেডে চালু করা হলো (যাতে ভিডিও না আটকায়)
+voice_thread = threading.Thread(target=listen_to_voice, daemon=True)
+voice_thread.start()
+
+# ================= 3. Google AI Model ডাউনলোড =================
 MODEL_PATH = "gesture_recognizer.task"
 if not os.path.exists(MODEL_PATH):
-    print("Downloading Google's Real AI Gesture Model...")
+    print("[*] Downloading Google's Real AI Gesture Model...")
     urllib.request.urlretrieve(
         "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
         MODEL_PATH
     )
 
-# ================= 2. AI ব্রেইন সেটআপ =================
+# ================= 4. AI ব্রেইন সেটআপ =================
 mp_tasks = mp.tasks
 BaseOptions = mp_tasks.BaseOptions
 GestureRecognizer = mp_tasks.vision.GestureRecognizer
@@ -26,18 +68,18 @@ options = GestureRecognizerOptions(
 )
 recognizer = GestureRecognizer.create_from_options(options)
 
-# ================= 3. ক্যামেরা সেটআপ =================
-cap = cv2.VideoCapture(1)
-cv2.namedWindow("Smart Glove Vision AI", cv2.WINDOW_NORMAL)
-cv2.resizeWindow("Smart Glove Vision AI", 800, 450)
+# ================= 5. ক্যামেরা সেটআপ =================
+# তুই আগের কোডে 1 দিয়েছিস, তাই ওয়েবক্যাম 1 ই রাখলাম
+cap = cv2.VideoCapture(1) 
+cv2.namedWindow("Smart Glove AI", cv2.WINDOW_NORMAL)
+cv2.resizeWindow("Smart Glove AI", 800, 450)
 
 hack_mode = False
 
-print("\n[*] Google AI Tracker is READY!")
-print("[*] I can see: Closed_Fist, Open_Palm, Pointing_Up, Thumb_Down, Thumb_Up, Victory, ILoveYou")
-print("[*] Press 'e' for Hack Mode, 'r' for Normal Mode, 'q' to Quit\n")
+print("\n[*] Google AI Tracker & Voice Assistant READY!")
+print("[*] Press 'e' for Hack Mode, 'r' for Normal Mode, 'q' to Quit")
 
-# ================= 4. মেইন লুপ =================
+# ================= 6. মেইন লুপ =================
 while True:
     ret, frame = cap.read()
     if not ret: break
@@ -45,39 +87,37 @@ while True:
     frame = cv2.flip(frame, 1)
     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     
-    # AI-এর জন্য ইমেজ রেডি করা
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
     results = recognizer.recognize(mp_image)
     
     current_prediction = "Listening..."
     
     if results.hand_landmarks:
-        # 🧠 গুগলের ৭টা সাইন ডিটেক্ট করা
+        # 🧠 গুগলের ডিটেকশনকে তোর কাস্টম সাইনে কনভার্ট করা
         if results.gestures and len(results.gestures) > 0:
             ai_sign = results.gestures[0][0].category_name
             if ai_sign != "None":
-                current_prediction = ai_sign
+                # SIGN_MAP থেকে কাস্টম নাম নেবে, না পেলে গুগলেরটাই দেখাবে
+                current_prediction = SIGN_MAP.get(ai_sign, ai_sign)
         
-        # হাতের পয়েন্টগুলো ড্র করা (গোল্ডেন লুক)
         landmarks = results.hand_landmarks[0]
         h, w, _ = frame.shape
         for lm in landmarks:
             cv2.circle(frame, (int(lm.x * w), int(lm.y * h)), 5, (0, 0, 255), -1)
 
-    # ================= 5. দ্য হ্যাক ইঞ্জিন =================
+    # ================= 7. দ্য হ্যাক ইঞ্জিন =================
     if hack_mode:
-        fake_results = ["ERROR 404", "SYSTEM_GLITCH", "UNKNOWN_SIGN", "NOISE"]
+        fake_results = ["ERROR 404", "GLITCH", "SYSTEM_OVERRIDE", "NOISE"]
         current_prediction = random.choice(fake_results)
 
     # UI ডিজাইন
     cv2.rectangle(frame, (10, 10), (450, 100), (0, 0, 0), -1)
     text_color = (0, 0, 255) if hack_mode else (0, 255, 0)
-    cv2.putText(frame, f"AI Sign: {current_prediction}", (20, 60), 
+    cv2.putText(frame, f"Sign: {current_prediction}", (20, 60), 
                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, text_color, 3)
 
-    cv2.imshow("Smart Glove Vision AI", frame)
+    cv2.imshow("Smart Glove AI", frame)
     
-    # স্পাই কন্ট্রোল
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'): break
     elif key == ord('e'): hack_mode = True
