@@ -5,9 +5,29 @@ import urllib.request
 import os
 import threading
 import speech_recognition as sr
+import serial
 
-# ================= 1. কাস্টম সাইন ডিকশনারি =================
-# গুগলের সাইনকে তোর কাস্টম সাইনে কনভার্ট করার ম্যাজিক ম্যাপ
+# ================= 1. ESP32 সিরিয়াল কানেকশন =================
+SERIAL_PORT = 'COM3' 
+BAUD_RATE = 115200
+try:
+    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+    print(f"[SUCCESS] Connected to ESP32 Display on {SERIAL_PORT}")
+except Exception as e:
+    ser = None
+    print(f"[WARNING] ESP32 not found on {SERIAL_PORT}! Running AI in standalone mode.")
+
+# ডেটা পাঠানোর স্মার্ট ফাংশন (C++ কোডের সাথে সিঙ্ক করা)
+def send_to_esp(data_type, text):
+    if ser and ser.is_open:
+        try:
+            # ফরম্যাট: "SIGN:Salam\n" অথবা "VOICE:Hello World\n"
+            message = f"{data_type}:{text}\n"
+            ser.write(message.encode('utf-8'))
+        except Exception as e:
+            print(f"[SERIAL ERROR] {e}")
+
+# ================= 2. কাস্টম সাইন ডিকশনারি =================
 SIGN_MAP = {
     "Open_Palm": "Salam",
     "Closed_Fist": "Food",
@@ -15,13 +35,12 @@ SIGN_MAP = {
     "Thumb_Up": "Yes",
     "Thumb_Down": "No",
     "ILoveYou": "Water",
-    "Victory": "Victory" # এটা ডিফল্ট রেখে দিলাম
+    "Victory": "Victory"
 }
 
-# ================= 2. ভয়েস রিকগনিশন (ব্যাকগ্রাউন্ড থ্রেড) =================
+# ================= 3. ভয়েস রিকগনিশন (ব্যাকগ্রাউন্ড থ্রেড) =================
 def listen_to_voice():
     recognizer = sr.Recognizer()
-    # ওয়েবক্যাম বা ডিফল্ট মাইক্রোফোন ব্যবহার করবে
     with sr.Microphone() as source:
         print("\n[🎤] Mic is ACTIVE! Calibrating for background noise...")
         recognizer.adjust_for_ambient_noise(source, duration=1)
@@ -29,24 +48,24 @@ def listen_to_voice():
         
         while True:
             try:
-                # কথা শোনার চেষ্টা করবে
                 audio = recognizer.listen(source, timeout=1, phrase_time_limit=5)
-                # কথাকে ইংরেজিতে কনভার্ট করা (Google Speech-to-Text)
                 text = recognizer.recognize_google(audio, language="en-US")
-                print(f">>> [🗣️ VOICE TRANSLATION]: {text}")
+                print(f">>> [🗣️ VOICE]: {text}")
+                
+                # ESP32 কে ভয়েস টেক্সট পাঠানো হচ্ছে (VOICE: ট্যাগ দিয়ে)
+                send_to_esp("VOICE", text)
                 
             except sr.WaitTimeoutError:
-                pass # কথা না বললে আবার লুপে ঘুরবে
+                pass 
             except sr.UnknownValueError:
-                pass # কথা বুঝতে না পারলে ইগনোর করবে
-            except Exception as e:
+                pass 
+            except Exception:
                 pass
 
-# ভয়েস শোনার ইঞ্জিনটাকে আলাদা একটা থ্রেডে চালু করা হলো (যাতে ভিডিও না আটকায়)
 voice_thread = threading.Thread(target=listen_to_voice, daemon=True)
 voice_thread.start()
 
-# ================= 3. Google AI Model ডাউনলোড =================
+# ================= 4. Google AI Model ডাউনলোড =================
 MODEL_PATH = "gesture_recognizer.task"
 if not os.path.exists(MODEL_PATH):
     print("[*] Downloading Google's Real AI Gesture Model...")
@@ -55,7 +74,7 @@ if not os.path.exists(MODEL_PATH):
         MODEL_PATH
     )
 
-# ================= 4. AI ব্রেইন সেটআপ =================
+# ================= 5. AI ব্রেইন সেটআপ =================
 mp_tasks = mp.tasks
 BaseOptions = mp_tasks.BaseOptions
 GestureRecognizer = mp_tasks.vision.GestureRecognizer
@@ -68,18 +87,18 @@ options = GestureRecognizerOptions(
 )
 recognizer = GestureRecognizer.create_from_options(options)
 
-# ================= 5. ক্যামেরা সেটআপ =================
-# তুই আগের কোডে 1 দিয়েছিস, তাই ওয়েবক্যাম 1 ই রাখলাম
+# ================= 6. ক্যামেরা সেটআপ =================
 cap = cv2.VideoCapture(1) 
 cv2.namedWindow("Smart Glove AI", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("Smart Glove AI", 800, 450)
 
 hack_mode = False
+last_sent_sign = "" 
 
-print("\n[*] Google AI Tracker & Voice Assistant READY!")
+print("\n[*] Full System READY (AI + Voice + ESP32 Display)")
 print("[*] Press 'e' for Hack Mode, 'r' for Normal Mode, 'q' to Quit")
 
-# ================= 6. মেইন লুপ =================
+# ================= 7. মেইন লুপ =================
 while True:
     ret, frame = cap.read()
     if not ret: break
@@ -90,14 +109,12 @@ while True:
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
     results = recognizer.recognize(mp_image)
     
-    current_prediction = "Listening..."
+    current_prediction = "Waiting..."
     
     if results.hand_landmarks:
-        # 🧠 গুগলের ডিটেকশনকে তোর কাস্টম সাইনে কনভার্ট করা
         if results.gestures and len(results.gestures) > 0:
             ai_sign = results.gestures[0][0].category_name
             if ai_sign != "None":
-                # SIGN_MAP থেকে কাস্টম নাম নেবে, না পেলে গুগলেরটাই দেখাবে
                 current_prediction = SIGN_MAP.get(ai_sign, ai_sign)
         
         landmarks = results.hand_landmarks[0]
@@ -105,10 +122,16 @@ while True:
         for lm in landmarks:
             cv2.circle(frame, (int(lm.x * w), int(lm.y * h)), 5, (0, 0, 255), -1)
 
-    # ================= 7. দ্য হ্যাক ইঞ্জিন =================
+    # ================= 8. দ্য হ্যাক ইঞ্জিন =================
     if hack_mode:
-        fake_results = ["ERROR 404", "GLITCH", "SYSTEM_OVERRIDE", "NOISE"]
+        fake_results = ["ERROR", "GLITCH", "NOISE"]
         current_prediction = random.choice(fake_results)
+
+    # ================= 9. ESP32 তে সাইন পাঠানো =================
+    # শুধুমাত্র সাইন পরিবর্তন হলেই ESP32 কে পাঠানো হবে (ল্যাগ ফ্রি ডিসপ্লে)
+    if current_prediction != "Waiting..." and current_prediction != last_sent_sign:
+        send_to_esp("SIGN", current_prediction) # SIGN: ট্যাগ দিয়ে পাঠানো হচ্ছে
+        last_sent_sign = current_prediction
 
     # UI ডিজাইন
     cv2.rectangle(frame, (10, 10), (450, 100), (0, 0, 0), -1)
@@ -125,3 +148,4 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
+if ser: ser.close()

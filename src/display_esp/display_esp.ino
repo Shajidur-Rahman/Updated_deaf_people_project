@@ -1,28 +1,28 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
-#include <XPT2046_Touchscreen.h> // টাচের লাইব্রেরি
+#include <XPT2046_Touchscreen.h> 
 
-// ডিসপ্লে ও টাচের পিন সেটআপ (তোর ESP32-S3 এর জন্য)
+// ================= ১. পিন সেটআপ (ESP32-S3) =================
 #define TFT_CS   10
 #define TFT_DC   8
 #define TFT_RST  9
 #define TFT_MOSI 11
 #define TFT_CLK  12
 #define TFT_MISO 13
+#define TOUCH_CS 7 
 
-#define TOUCH_CS 7  // টাচের চিপ সিলেক্ট পিন
-
-// কাস্টম SPI চ্যানেল (ESP32-S3 এর জন্য)
+// কাস্টম SPI চ্যানেল
 SPIClass *customSPI = new SPIClass(FSPI);
 Adafruit_ILI9341 tft = Adafruit_ILI9341(customSPI, TFT_DC, TFT_CS, TFT_RST);
-XPT2046_Touchscreen ts(TOUCH_CS); // টাচ কন্ট্রোলার
+XPT2046_Touchscreen ts(TOUCH_CS); 
 
+// ================= ২. গ্লোবাল ভেরিয়েবল =================
 String currentSign = "Waiting...";
 String currentVoice = "Waiting...";
 
-// UI State Control (0 = Main Screen, 1 = About Screen)
-int currentUIState = 0; 
+// 🧠 স্মার্ট মোড কন্ট্রোলার (0 = Both, 1 = Sign Only, 2 = Voice Only)
+int displayMode = 0; 
 unsigned long lastTouchTime = 0;
 
 void setup() {
@@ -30,87 +30,81 @@ void setup() {
   
   // কাস্টম SPI চালু করা
   customSPI->begin(TFT_CLK, TFT_MISO, TFT_MOSI, TFT_CS);
-
-  // 🚀 হার্ডওয়্যার স্ট্যাবল হওয়ার জন্য একটু সময় দেওয়া
-  delay(500); 
+  delay(500); // হার্ডওয়্যার স্ট্যাবল হওয়ার জন্য সময়
 
   // ডিসপ্লে সেটআপ
   tft.begin();
-  tft.setRotation(0); // পোট্রেট মোড (লম্বালম্বি)
+  tft.setRotation(0); // পোট্রেট মোড
   
   // টাচ সেটআপ
   ts.begin(*customSPI); 
-  ts.setRotation(0); // ডিসপ্লের সাথে টাচের রোটেশন ম্যাচ করানো
+  ts.setRotation(0); 
 
-  // 🚀 গার্বেজ বা ঝিরঝিরে দাগ মুছতে ডাবল ক্লিয়ার
+  // ডাবল ক্লিয়ার (গার্বেজ মুছতে)
   tft.fillScreen(ILI9341_WHITE); 
   delay(100);
   tft.fillScreen(ILI9341_BLACK);
 
-  drawMainScreen(); // মেইন ডিজাইন লোড
-  Serial.println("System Ready! Waiting for Touch...");
+  drawMainScreen(); 
+  Serial.println("System Ready! Waiting for Data & Touch...");
 }
 
 void loop() {
-  // ================= ১. এআই ব্রেইন থেকে ডেটা রিসিভ করা =================
+  // ================= ৩. পাইথন থেকে ডেটা রিসিভ (Serial) =================
   if (Serial.available()) {
     String data = Serial.readStringUntil('\n');
     data.trim();
 
+    // সাইন ডেটা ফিল্টার
     if (data.startsWith("SIGN:")) {
       String newSign = data.substring(5);
       if (newSign != currentSign) {
         currentSign = newSign;
-        if (currentUIState == 0) updateSignDisplay(); 
+        updateSignDisplay(); 
       }
     } 
+    // ভয়েস ডেটা ফিল্টার
     else if (data.startsWith("VOICE:")) {
-      currentVoice = data.substring(6);
-      if (currentUIState == 0) updateVoiceDisplay();
+      String newVoice = data.substring(6);
+      if (newVoice != currentVoice) {
+        currentVoice = newVoice;
+        updateVoiceDisplay();
+      }
     }
   }
 
-  // ================= ২. টাচ রেসপন্স হ্যান্ডেল করা (With Serial Debugging) =================
+  // ================= ৪. ম্যাজিক টাচ কন্ট্রোল (Level 2 Ghost Killer) =================
   if (ts.touched()) { 
+    // ১. ফেক স্পাইক (Ghost) রিড করে ফেলে দেওয়া
+    TS_Point fakePoint = ts.getPoint(); 
     
-    if (millis() - lastTouchTime > 300) { // 300ms ডিবাইন্স ডিলে
-      TS_Point p = ts.getPoint();
-      lastTouchTime = millis();
+    // ২. ২০ মিলি-সেকেন্ড অপেক্ষা করা (ভূত হলে এতক্ষণে গায়েব হয়ে যাবে)
+    delay(20); 
+    
+    // ৩. ২০ms পরেও যদি টাচ হয়ে থাকে, তার মানে এটা আসল মানুষ!
+    if (ts.touched()) {
+      TS_Point p = ts.getPoint(); 
       
-      // 🚀 সিরিয়াল মনিটরে টাচের ডেটা প্রিন্ট করা (চেক করার জন্য)
-      Serial.print("🎯 Touch Detected! X: "); 
-      Serial.print(p.x);
-      Serial.print(" | Y: "); 
-      Serial.println(p.y);
+      // ৪. এক্সট্রিম প্রেসার চেক (১০০০ এর নিচে সব বাতিল)
+      if (p.z > 1000) { 
+        
+        // ডিবাইন্স ডিলে (ডাবল ক্লিক ঠেকানোর জন্য)
+        if (millis() - lastTouchTime > 500) { 
+          lastTouchTime = millis();
+          
+          Serial.print("🎯 REAL Human Touch! Z: ");
+          Serial.println(p.z);
+          
+          // মোড চেঞ্জ করা (0 -> 1 -> 2 -> 0)
+          displayMode++;
+          if (displayMode > 2) {
+            displayMode = 0;
+          }
+          
+          Serial.print("Mode Changed to: ");
+          Serial.println(displayMode);
 
-      // পোট্রেট মোডের জন্য টাচ ক্যালিব্রেশন (Width: 240, Height: 320)
-      int touchX = map(p.x, 200, 3800, 0, 240); 
-      int touchY = map(p.y, 200, 3800, 0, 320);
-
-      if (currentUIState == 0) { // মেইন স্ক্রিন
-        // "CLEAR" বাটন চেক (X: 10 to 110, Y: 260 to 300)
-        if (touchX > 10 && touchX < 110 && touchY > 260 && touchY < 300) {
-          Serial.println("-> CLEAR Button Pressed!");
-          currentSign = "Waiting...";
-          currentVoice = "Waiting...";
-          updateSignDisplay();
-          updateVoiceDisplay();
-          drawButton(10, 260, 100, 40, "DONE!", ILI9341_GREEN, ILI9341_BLACK); 
-          delay(200);
-          drawButton(10, 260, 100, 40, "CLEAR", ILI9341_RED, ILI9341_WHITE);
-        }
-        // "ABOUT" বাটন চেক (X: 130 to 230, Y: 260 to 300)
-        else if (touchX > 130 && touchX < 230 && touchY > 260 && touchY < 300) {
-          Serial.println("-> ABOUT Button Pressed!");
-          currentUIState = 1;
-          drawAboutScreen();
-        }
-      } 
-      else if (currentUIState == 1) { // About স্ক্রিন
-        // "BACK" বাটন চেক (X: 60 to 180, Y: 260 to 300)
-        if (touchX > 60 && touchX < 180 && touchY > 260 && touchY < 300) {
-          Serial.println("-> BACK Button Pressed!");
-          currentUIState = 0;
+          // মোড চেঞ্জ হলে স্ক্রিন মুছে নতুন ডিজাইন লোড করা
           tft.fillScreen(ILI9341_BLACK);
           drawMainScreen();
         }
@@ -119,85 +113,80 @@ void loop() {
   }
 }
 
-// ================= UI DRAWING FUNCTIONS (Portrait 240x320) =================
+// ================= ৫. UI DRAWING FUNCTIONS =================
 
 void drawMainScreen() {
+  // উপরের টাইটেল বার
   tft.fillRect(0, 0, 240, 45, tft.color565(0, 50, 100)); 
   tft.setTextColor(ILI9341_CYAN);
   tft.setTextSize(2);
   tft.setCursor(40, 15);
   tft.print("NeuroSign Hub");
 
-  tft.setTextColor(ILI9341_YELLOW);
-  tft.setTextSize(2);
-  tft.setCursor(10, 60);
-  tft.print("GLOVE DETECTED:");
-  
-  tft.drawLine(10, 135, 230, 135, ILI9341_DARKGREY); 
-  
-  tft.setTextColor(ILI9341_GREEN);
-  tft.setCursor(10, 150);
-  tft.print("VOICE DETECTED:");
+  // মোড অনুযায়ী লেআউট ড্র করা
+  if (displayMode == 0) {
+    // Mode 0: Both (Sign + Voice)
+    tft.setTextColor(ILI9341_YELLOW);
+    tft.setTextSize(2);
+    tft.setCursor(10, 60);
+    tft.print("GLOVE DETECTED:");
+    tft.drawLine(10, 135, 230, 135, ILI9341_DARKGREY); // মাঝখানের দাগ
+    tft.setTextColor(ILI9341_GREEN);
+    tft.setCursor(10, 150);
+    tft.print("VOICE DETECTED:");
+  } 
+  else if (displayMode == 1) {
+    // Mode 1: Sign Only (বড় করে)
+    tft.setTextColor(ILI9341_YELLOW);
+    tft.setTextSize(2);
+    tft.setCursor(10, 80);
+    tft.print("SIGN LANGUAGE:");
+  } 
+  else if (displayMode == 2) {
+    // Mode 2: Voice Only (বড় করে)
+    tft.setTextColor(ILI9341_GREEN);
+    tft.setTextSize(2);
+    tft.setCursor(10, 80);
+    tft.print("VOICE TEXT:");
+  }
 
+  // ডেটা আপডেট করা
   updateSignDisplay();
   updateVoiceDisplay();
 
-  // বাটন ড্র করা
-  drawButton(10, 260, 100, 40, "CLEAR", ILI9341_RED, ILI9341_WHITE);
-  drawButton(130, 260, 100, 40, "ABOUT", ILI9341_BLUE, ILI9341_WHITE);
-}
-
-void drawAboutScreen() {
-  tft.fillScreen(ILI9341_NAVY); 
-  
-  tft.setTextColor(ILI9341_WHITE);
-  tft.setTextSize(3);
-  tft.setCursor(45, 30);
-  tft.print("NeuroSign");
-  
+  // নিচের ইনস্ট্রাকশন
+  tft.setTextColor(ILI9341_DARKGREY);
   tft.setTextSize(1);
-  tft.setCursor(25, 70);
-  tft.print("Embedded Communication Ecosystem");
-
-  tft.setTextColor(ILI9341_CYAN);
-  tft.setTextSize(1);
-  tft.setCursor(20, 110);
-  tft.print("> Edge AI Powered");
-  tft.setCursor(20, 140);
-  tft.print("> Two-way Comm.");
-  tft.setCursor(20, 170);
-  tft.print("> Offline System");
-
-  drawButton(60, 260, 120, 40, "BACK", ILI9341_DARKGREY, ILI9341_WHITE);
+  tft.setCursor(35, 300);
+  tft.print("Tap and hold to change mode");
 }
 
 void updateSignDisplay() {
-  tft.fillRect(10, 85, 220, 45, ILI9341_BLACK); 
+  // যদি ভয়েস অনলি মোডে থাকে, সাইন রেন্ডার হবে না
+  if (displayMode == 2) return; 
+
+  int yPos = (displayMode == 0) ? 90 : 120; 
+  int textSize = (displayMode == 0) ? 3 : 4; 
+
+  // আগের লেখা মোছার জন্য কালো বক্স
+  tft.fillRect(10, yPos - 5, 220, 45, ILI9341_BLACK); 
   tft.setTextColor(ILI9341_WHITE);
-  tft.setTextSize(3); 
-  tft.setCursor(10, 95);
+  tft.setTextSize(textSize); 
+  tft.setCursor(10, yPos);
   tft.print(currentSign);
 }
 
 void updateVoiceDisplay() {
-  tft.fillRect(10, 175, 220, 50, ILI9341_BLACK); 
-  tft.setTextColor(ILI9341_LIGHTGREY);
-  tft.setTextSize(2); 
-  tft.setCursor(10, 185);
-  tft.print(currentVoice);
-}
+  // যদি সাইন অনলি মোডে থাকে, ভয়েস রেন্ডার হবে না
+  if (displayMode == 1) return; 
 
-void drawButton(int x, int y, int w, int h, const char* label, uint16_t bgColor, uint16_t textColor) {
-  tft.fillRoundRect(x, y, w, h, 8, bgColor);
-  tft.drawRoundRect(x, y, w, h, 8, ILI9341_WHITE);
-  
-  tft.setTextColor(textColor);
-  tft.setTextSize(2);
-  
-  int textLen = strlen(label) * 12; 
-  int textX = x + (w - textLen) / 2;
-  int textY = y + (h - 16) / 2; 
-  
-  tft.setCursor(textX, textY);
-  tft.print(label);
+  int yPos = (displayMode == 0) ? 180 : 120;
+  int textSize = (displayMode == 0) ? 2 : 3; 
+
+  // আগের লেখা মোছার জন্য কালো বক্স
+  tft.fillRect(10, yPos - 5, 220, 50, ILI9341_BLACK); 
+  tft.setTextColor(ILI9341_LIGHTGREY);
+  tft.setTextSize(textSize); 
+  tft.setCursor(10, yPos);
+  tft.print(currentVoice);
 }
