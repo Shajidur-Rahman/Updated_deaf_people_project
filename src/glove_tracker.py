@@ -1,24 +1,46 @@
 import cv2
-import mediapipe as mp
-import serial
 import csv
 import time
 import os
+
+try:
+    import mediapipe as mp
+except Exception as exc:
+    mp = None
+    print(f"[WARN] Mediapipe unavailable: {exc}")
+
+try:
+    import serial
+except ImportError:
+    serial = None
 
 # ================= সেটআপ সেকশন =================
 SERIAL_PORT = 'COM8' 
 BAUD_RATE = 115200
 
-try:
-    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    print(f"[SUCCESS] Connected to ESP32-S3 on {SERIAL_PORT}")
-except Exception as e:
-    print(f"[ERROR] Cannot connect to {SERIAL_PORT}. Check cable!")
-    exit()
+ser = None
+if serial is not None:
+    try:
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        print(f"[SUCCESS] Connected to ESP32-S3 on {SERIAL_PORT}")
+    except Exception as e:
+        print(f"[WARN] Cannot connect to {SERIAL_PORT}. Check cable or serial settings: {e}")
+else:
+    print("[WARN] pyserial is not installed. Continuing without serial communication.")
 
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
-mp_draw = mp.solutions.drawing_utils
+mp_hands = None
+hands = None
+mp_draw = None
+if mp is not None:
+    try:
+        mp_hands = mp.solutions.hands
+        hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
+        mp_draw = mp.solutions.drawing_utils
+    except Exception as exc:
+        print(f"[WARN] Mediapipe hand tracking setup failed: {exc}")
+        mp_hands = None
+        hands = None
+        mp_draw = None
 
 cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
@@ -61,20 +83,24 @@ while True:
         break
 
     frame = cv2.flip(frame, 1) # আয়নার মতো সোজা ভিউ পাওয়ার জন্য
-    img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = hands.process(img_rgb)
     hand_data = [0.0] * 42 
 
-    if results.multi_hand_landmarks:
-        hand_landmarks = results.multi_hand_landmarks[0]
-        mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-        idx = 0
-        for lm in hand_landmarks.landmark:
-            hand_data[idx], hand_data[idx+1] = round(lm.x, 4), round(lm.y, 4)
-            idx += 2
+    if hands is not None and mp_draw is not None:
+        try:
+            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = hands.process(img_rgb)
+            if results.multi_hand_landmarks:
+                hand_landmarks = results.multi_hand_landmarks[0]
+                mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                idx = 0
+                for lm in hand_landmarks.landmark:
+                    hand_data[idx], hand_data[idx+1] = round(lm.x, 4), round(lm.y, 4)
+                    idx += 2
+        except Exception as exc:
+            print(f"[WARN] Hand tracking frame failed: {exc}")
 
     # ESP32 থেকে ডেটা পড়া
-    if ser.in_waiting > 0:
+    if ser is not None and ser.in_waiting > 0:
         try:
             line = ser.readline().decode('utf-8').strip()
             if line:
@@ -84,7 +110,7 @@ while True:
                     accel_str = parts[1].split(':')[1].split(',')
                     gyro_str = parts[2].split(':')[1].split(',')
                     last_sensor_data = flex_str + accel_str + gyro_str
-        except:
+        except Exception:
             pass 
 
     # রেকর্ডিং চালু থাকলে ডেটা র‍্যামে জমানো
@@ -173,4 +199,5 @@ while True:
 # ক্লিনআপ
 cap.release()
 cv2.destroyAllWindows()
-ser.close()
+if ser is not None:
+    ser.close()
