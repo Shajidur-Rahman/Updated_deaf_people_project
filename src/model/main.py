@@ -8,7 +8,7 @@ import speech_recognition as sr
 import serial
 import pygame
 
-# ================= 1. ESP32 সিরিয়াল কানেকশন =================
+
 SERIAL_PORT = 'COM3' 
 BAUD_RATE = 115200
 try:
@@ -18,10 +18,10 @@ except:
     ser = None
     print(f"[WARNING] ESP32 not found on {SERIAL_PORT}!")
 
-# ================= 2. সাউন্ড ইঞ্জিন সেটআপ =================
+
 pygame.mixer.init()
 
-# ফাইলের লোকেশন নিশ্চিত করার জন্য পাথ সেটআপ
+
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 AUDIO_MAP = {
@@ -52,7 +52,7 @@ def send_to_esp(data_type, text):
         except Exception as e:
             print(f"[SERIAL ERROR] {e}")
 
-# ================= 3. ভয়েস রিকগনিশন থ্রেড =================
+
 def listen_to_voice():
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
@@ -69,7 +69,7 @@ def listen_to_voice():
 voice_thread = threading.Thread(target=listen_to_voice, daemon=True)
 voice_thread.start()
 
-# ================= 4. Google AI সেটআপ =================
+
 MODEL_PATH = os.path.join(base_dir, "gesture_recognizer.task")
 if not os.path.exists(MODEL_PATH):
     urllib.request.urlretrieve("https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task", MODEL_PATH)
@@ -80,7 +80,7 @@ options = mp.tasks.vision.GestureRecognizerOptions(
 )
 recognizer = mp.tasks.vision.GestureRecognizer.create_from_options(options)
 
-# ================= 5. মেইন লুপ =================
+
 SIGN_MAP = {
     "Open_Palm": "Salam", "Closed_Fist": "Food", "Pointing_Up": "Help",
     "Thumb_Up": "Yes", "Thumb_Down": "No", "ILoveYou": "Water", "Victory": "Victory"

@@ -16,69 +16,76 @@
 #define OLED_SDA 4 
 #define OLED_SCL 5 
 
-// ডিসপ্লে অবজেক্টস
+// বিটম্যাপ অ্যারে (তোমার ৭টি ছবির কোড এখানে বসাও)
+const unsigned char epd_bitmap_salam[] PROGMEM = { help.cpp };
+const unsigned char epd_bitmap_help[] PROGMEM = { help.cpp };
+const unsigned char epd_bitmap_food[] PROGMEM = { food.cpp };
+const unsigned char epd_bitmap_yes[] PROGMEM = { /* yes.cpp */ };
+const unsigned char epd_bitmap_no[] PROGMEM = { /* no.cpp */ };
+const unsigned char epd_bitmap_water[] PROGMEM = { /* water.cpp */ };
+const unsigned char epd_bitmap_victory[] PROGMEM = { /* victory.cpp */ };
+
 SPIClass *customSPI = new SPIClass(FSPI);
 Adafruit_ILI9341 tft = Adafruit_ILI9341(customSPI, TFT_DC, TFT_CS, TFT_RST);
 Adafruit_SSD1306 oled(128, 64, &Wire, -1);
 XPT2046_Touchscreen ts(TOUCH_CS); 
 
-String currentSign = "Waiting...";
-String currentVoice = "Waiting...";
+String currentSign = "Waiting...", currentVoice = "Waiting...";
 int displayMode = 0; 
 unsigned long lastTouchTime = 0;
+
+void showOLEDImage(const unsigned char* bitmap) {
+  oled.clearDisplay();
+  oled.drawBitmap(0, 0, bitmap, 128, 64, 1);
+  oled.display();
+}
+
+void updateOLED() {
+  oled.clearDisplay();
+  oled.setTextColor(SSD1306_WHITE);
+  oled.setCursor(0, 0);
+  oled.setTextSize(1);
+  oled.println("VOICE:");
+  oled.setTextSize(2);
+  oled.println(currentVoice);
+  oled.display();
+}
 
 void setup() {
   Serial.begin(115200);
   Wire.begin(OLED_SDA, OLED_SCL);
   customSPI->begin(TFT_CLK, TFT_MISO, TFT_MOSI, TFT_CS);
-  
   tft.begin();
   tft.setRotation(0);
   ts.begin(*customSPI); 
-  ts.setRotation(0);
-  
-  // OLED ইনিশিয়ালাইজ
   oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   oled.clearDisplay();
   oled.display();
-  
   tft.fillScreen(ILI9341_BLACK);
   drawMainScreen(); 
-  Serial.println("System Ready! Waiting for Data...");
 }
 
 void loop() {
-  // সিরিয়াল ডেটা রিসিভ
   if (Serial.available()) {
     String data = Serial.readStringUntil('\n');
     data.trim();
-
     if (data.startsWith("SIGN:")) {
-      String newSign = data.substring(5);
-      if (newSign != currentSign) {
-        currentSign = newSign;
-        updateSignDisplay(); 
-        
-        // OLED আপডেট (শুধু টেক্সট)
-        oled.clearDisplay();
-        oled.setTextSize(2);
-        oled.setTextColor(SSD1306_WHITE);
-        oled.setCursor(0, 0);
-        oled.println("SIGN:");
-        oled.println(currentSign);
-        oled.display();
-      }
-    } 
-    else if (data.startsWith("VOICE:")) {
-      String newVoice = data.substring(6);
-      if (newVoice != currentVoice) {
-        currentVoice = newVoice;
-        updateVoiceDisplay();
-      }
+      currentSign = data.substring(5);
+      updateSignDisplay(); 
+    } else if (data.startsWith("VOICE:")) {
+      currentVoice = data.substring(6);
+      updateVoiceDisplay();
+      // ইমেজ লজিক
+      if (currentVoice == "salam") showOLEDImage(epd_bitmap_salam);
+      else if (currentVoice == "help") showOLEDImage(epd_bitmap_help);
+      else if (currentVoice == "food") showOLEDImage(epd_bitmap_food);
+      else if (currentVoice == "yes") showOLEDImage(epd_bitmap_yes);
+      else if (currentVoice == "no") showOLEDImage(epd_bitmap_no);
+      else if (currentVoice == "water") showOLEDImage(epd_bitmap_water);
+      else if (currentVoice == "victory") showOLEDImage(epd_bitmap_victory);
+      else updateOLED();
     }
   }
-
-  // টাচ হ্যান্ডেলিং
   if (ts.touched()) { 
     delay(20); 
     if (ts.touched() && ts.getPoint().z > 1000) {
@@ -92,38 +99,13 @@ void loop() {
   }
 }
 
-// ================= UI DRAWING FUNCTIONS =================
 void drawMainScreen() {
   tft.fillRect(0, 0, 240, 45, tft.color565(0, 50, 100)); 
   tft.setTextColor(ILI9341_CYAN);
   tft.setTextSize(2);
   tft.setCursor(40, 15);
   tft.print("NeuroSign Hub");
-
-  if (displayMode == 0) {
-    tft.setTextColor(ILI9341_YELLOW);
-    tft.setTextSize(2);
-    tft.setCursor(10, 60);
-    tft.print("GLOVE DETECTED:");
-    tft.drawLine(10, 135, 230, 135, ILI9341_DARKGREY);
-    tft.setTextColor(ILI9341_GREEN);
-    tft.setCursor(10, 150);
-    tft.print("VOICE DETECTED:");
-  } 
-  else if (displayMode == 1) {
-    tft.setTextColor(ILI9341_YELLOW);
-    tft.setTextSize(2);
-    tft.setCursor(10, 80);
-    tft.print("SIGN LANGUAGE:");
-  } 
-  else if (displayMode == 2) {
-    tft.setTextColor(ILI9341_GREEN);
-    tft.setTextSize(2);
-    tft.setCursor(10, 80);
-    tft.print("VOICE TEXT:");
-  }
-  updateSignDisplay();
-  updateVoiceDisplay();
+  updateSignDisplay(); updateVoiceDisplay();
 }
 
 void updateSignDisplay() {
