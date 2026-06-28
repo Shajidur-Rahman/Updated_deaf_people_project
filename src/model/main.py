@@ -31,7 +31,7 @@ AUDIO_MAP = {
     "Yes": os.path.join(base_dir, "yes.mp3"),
     "No": os.path.join(base_dir, "no.mp3"),
     "Water": os.path.join(base_dir, "water.mp3"),
-    "Victory": os.path.join(base_dir, "victory.mp3")
+    "Victory": os.path.join(base_dir, "ok.mp3")
 }
 
 def play_audio(sign_name):
